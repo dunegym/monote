@@ -40,8 +40,8 @@
 位于 [`app/`](app/README.md)：
 
 - **技术栈**：Tauri 2（Rust 核心 + 系统 WebView2），前端为原生 HTML/CSS/ES Module（离线 vendor：marked / KaTeX / highlight.js）；
-- **已实现**：Markdown 编辑与实时预览、双链/反链/标签、SQLite FTS5 中文检索、回收站、自动备份、导入导出、WebDAV 同步、命令面板、快捷键自定义、通知中心、亮/暗主题；
-- **质量**：`cargo test` 153 项自动化测试全绿（141 单元 + 11 集成 + 1 性能冒烟）；release 可执行文件 8.25 MB，空闲内存约 40 MB；
+- **已实现**：Markdown 编辑与实时预览、双链/反链/标签、SQLite FTS5 中文检索、回收站、自动备份、导入导出、WebDAV 同步、命令面板、快捷键自定义、通知中心、亮/暗主题；标签支持两种写法，并提供「标签归位」命令统一迁移到文件头 front-matter（迁移前自动备份）；
+- **质量**：`cargo test` 160 项自动化测试全绿（147 单元 + 12 集成 + 1 性能冒烟）；release 可执行文件 8.26 MB，空闲内存约 40 MB；
 - **文档**：[应用 README](app/README.md)、[实现说明](app/docs/实现说明.md)、[测试报告](app/docs/测试报告.md)、[开发合同](app/CONTRACT.md)。
 
 构建与运行（Windows，需 Rust + MSVC）：

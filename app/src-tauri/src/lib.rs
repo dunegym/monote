@@ -47,6 +47,7 @@ pub fn run() {
             ipc::link_suggest,
             ipc::link_backlinks,
             ipc::tag_list,
+            ipc::tag_normalize,
             // 检索
             ipc::search_query,
             ipc::index_rebuild,

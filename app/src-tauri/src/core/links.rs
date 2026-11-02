@@ -348,6 +348,230 @@ pub fn extract_inline_tags(body: &str) -> Vec<String> {
     tags
 }
 
+/// 从正文中移除行内 `#标签`（识别规则与 [`extract_inline_tags`] 完全一致），
+/// 返回 `(新正文, 被移除的标签列表（按出现顺序去重）)`。
+///
+/// 处理细节：
+/// - 围栏代码块、行内代码、ATX 标题、`[[#锚点]]`、`C#`/URL 片段中的 `#` 不会被误删；
+/// - 删除后整行只剩空白则整行移除；
+/// - 删除后行内出现连续空格时压缩为一个（保留行首缩进），并清理多余空行。
+pub fn strip_inline_tags(body: &str) -> (String, Vec<String>) {
+    let mut removed: Vec<String> = Vec::new();
+    let mut fence = FenceState::default();
+    let mut out_lines: Vec<String> = Vec::new();
+    let ends_with_newline = body.ends_with('\n');
+    let mut lines: Vec<&str> = body.split('\n').collect();
+    if ends_with_newline {
+        lines.pop();
+    }
+    let mut changed_any = false;
+
+    for raw_line in lines {
+        let (line, had_cr) = match raw_line.strip_suffix('\r') {
+            Some(l) => (l, true),
+            None => (raw_line, false),
+        };
+        if fence.update(line) || fence.inside() || is_atx_heading(line) {
+            out_lines.push(raw_line.to_string());
+            continue;
+        }
+        let chars: Vec<char> = line.chars().collect();
+        let masked = mask_wikilinks(mask_inline_code(line));
+        let mut ranges: Vec<(usize, usize)> = Vec::new();
+        let mut i = 0;
+        while i < masked.len() {
+            if masked[i] == '#' && tag_can_start(&masked, i) {
+                let mut k = i + 1;
+                while k < masked.len()
+                    && (masked[k].is_alphanumeric() || masked[k] == '_' || masked[k] == '-')
+                {
+                    k += 1;
+                }
+                if k > i + 1 {
+                    let raw: String = masked[i + 1..k].iter().collect();
+                    if let Some(tag) = normalize_tag(&raw) {
+                        ranges.push((i, k));
+                        if !removed.contains(&tag) {
+                            removed.push(tag);
+                        }
+                    }
+                }
+                i = k.max(i + 1);
+            } else {
+                i += 1;
+            }
+        }
+        if ranges.is_empty() {
+            out_lines.push(raw_line.to_string());
+            continue;
+        }
+        // 中文语境：标签两侧若各有一个空格（如「打上标签 #入门 后」），删除时一并移除，
+        // 避免留下「打上标签 后」这种断裂；英文语境保留一个空格（「see #tag here」→「see here」）。
+        let mut expanded: Vec<(usize, usize)> = Vec::with_capacity(ranges.len());
+        for (start, end) in ranges.iter().copied() {
+            let mut s = start;
+            let mut e = end;
+            if s > 0
+                && e < chars.len()
+                && chars[s - 1] == ' '
+                && chars[e] == ' '
+                && s >= 2
+                && e + 1 < chars.len()
+                && is_cjk_context(chars[s - 2])
+                && is_cjk_context(chars[e + 1])
+            {
+                s -= 1;
+                e += 1;
+            }
+            expanded.push((s, e));
+        }
+        let ranges = expanded;
+        // 删除标签文本（ranges 为 masked 的字符下标，与原始行按字符对齐）
+        let mut new_chars: Vec<char> = Vec::with_capacity(chars.len());
+        let mut ri = 0;
+        let mut idx = 0;
+        while idx < chars.len() {
+            if ri < ranges.len() && idx == ranges[ri].0 {
+                idx = ranges[ri].1;
+                ri += 1;
+                continue;
+            }
+            new_chars.push(chars[idx]);
+            idx += 1;
+        }
+        // 保留行首缩进，压缩其后的连续空格
+        let leading = new_chars.iter().take_while(|c| **c == ' ' || **c == '\t').count();
+        let mut collapsed: Vec<char> = new_chars[..leading].to_vec();
+        let mut prev_space = false;
+        for &c in &new_chars[leading..] {
+            let is_space = c == ' ';
+            if is_space && prev_space {
+                continue;
+            }
+            prev_space = is_space;
+            collapsed.push(c);
+        }
+        let mut new_line: String = collapsed.iter().collect::<String>().trim_end().to_string();
+        changed_any = true;
+        if new_line.trim().is_empty() {
+            continue; // 整行只有标签：删除整行
+        }
+        if had_cr {
+            new_line.push('\r');
+        }
+        out_lines.push(new_line);
+    }
+
+    if !changed_any {
+        return (body.to_string(), Vec::new());
+    }
+    let mut joined = out_lines.join("\n");
+    if ends_with_newline {
+        joined.push('\n');
+    }
+    while joined.contains("\n\n\n") {
+        joined = joined.replace("\n\n\n", "\n\n");
+    }
+    (joined, removed)
+}
+
+/// 把正文行内 `#标签` 统一迁移到 front-matter 的 `tags` 字段（同一来源约定）。
+///
+/// 返回 `(新内容, 新增到 front-matter 的标签, 从正文移除的标签)`。
+/// 正文没有行内标签时原样返回内容（保证幂等、不产生无意义写盘）。
+/// 已存在的 `tags` 与行内标签合并去重；其余 front-matter 字段原样保留。
+pub fn normalize_inline_tags_to_front_matter(content: &str) -> (String, Vec<String>, Vec<String>) {
+    let (fm_raw, body) = split_front_matter(content);
+    let existing = fm_raw.map(parse_front_matter).map(|m| m.tags).unwrap_or_default();
+    let (new_body, removed) = strip_inline_tags(body);
+    if removed.is_empty() {
+        return (content.to_string(), Vec::new(), Vec::new());
+    }
+    let mut merged = existing;
+    let mut added = Vec::new();
+    for tag in &removed {
+        if !merged.contains(tag) {
+            merged.push(tag.clone());
+            added.push(tag.clone());
+        }
+    }
+    (rebuild_with_tags(fm_raw, &new_body, &merged), added, removed)
+}
+
+/// 在 front-matter 中写入 `tags: [...]`（无 front-matter 时创建），保留其余字段。
+fn rebuild_with_tags(fm_raw: Option<&str>, body: &str, tags: &[String]) -> String {
+    let tags_line = if tags.is_empty() {
+        None
+    } else {
+        Some(format!("tags: [{}]", tags.join(", ")))
+    };
+    let Some(raw) = fm_raw else {
+        return match tags_line {
+            None => body.to_string(),
+            Some(line) => {
+                if body.is_empty() {
+                    format!("---\n{line}\n---\n")
+                } else {
+                    format!("---\n{line}\n---\n\n{body}")
+                }
+            }
+        };
+    };
+
+    let mut lines: Vec<String> = raw.split('\n').map(|l| l.to_string()).collect();
+    while lines.last().map(|l| l.trim().is_empty()).unwrap_or(false) {
+        lines.pop();
+    }
+    let mut out: Vec<String> = Vec::with_capacity(lines.len() + 1);
+    let mut tag_insert_pos: Option<usize> = None;
+    let mut title_insert_pos: Option<usize> = None;
+    let mut i = 0;
+    while i < lines.len() {
+        let trimmed = lines[i].trim_start();
+        if let Some(rest) = trimmed.strip_prefix("tags:") {
+            let _ = rest;
+            tag_insert_pos = Some(tag_insert_pos.unwrap_or(out.len()));
+            i += 1;
+            // 吞掉多行数组写法（`- a` / `  - a`）
+            while i < lines.len() && lines[i].trim_start().starts_with("- ") {
+                i += 1;
+            }
+            continue;
+        }
+        if title_insert_pos.is_none() && trimmed.starts_with("title:") {
+            title_insert_pos = Some(out.len() + 1);
+        }
+        out.push(lines[i].clone());
+        i += 1;
+    }
+    if let Some(line) = tags_line {
+        let pos = tag_insert_pos
+            .or(title_insert_pos)
+            .unwrap_or(out.len())
+            .min(out.len());
+        out.insert(pos, line);
+    }
+    if out.is_empty() {
+        format!("---\n---\n{body}")
+    } else {
+        format!("---\n{}\n---\n{body}", out.join("\n"))
+    }
+}
+
+/// 中文（含中文标点）语境判断：用于删除行内标签时决定是否连带删除两侧空格。
+fn is_cjk_context(c: char) -> bool {
+    let cp = c as u32;
+    matches!(cp,
+        0x3400..=0x4DBF   // CJK 扩展 A
+        | 0x4E00..=0x9FFF // CJK 基本区
+        | 0xF900..=0xFAFF // 兼容汉字
+        | 0x3000..=0x303F // CJK 标点（、。〃《》「」等）
+        | 0xFF00..=0xFFEF // 全角标点（，。；：！？）
+        | 0x2018..=0x201D // 引号
+        | 0x2026 | 0x2014  // … —
+    )
+}
+
 /// 把一行中的双链 `[[...]]` 整体替换为空格（标签提取不应把 `[[#小节]]` 的锚点当标签）。
 fn mask_wikilinks(mut chars: Vec<char>) -> Vec<char> {
     for (start, end) in find_wikilinks(&chars) {
@@ -1125,5 +1349,88 @@ mod tests {
         assert!(note.property_tags.is_empty());
         assert_eq!(note.links.len(), 1);
         assert_eq!(note.links[0].line, 1);
+    }
+
+    // ---- 标签归位（统一到文件头） ------------------------------------------
+
+    #[test]
+    fn strip_inline_tags_removes_tags_but_keeps_code_and_links() {
+        let body = "# 标题 #不是标签\n\n行内 `#代码标签` 保留，正文 #考研 #操作系统 删除。\n\n```rust\n// #代码块标签\nlet x = 1;\n```\n\n链接 [[#锚点]] 与 C# 语言保留。\n\n#考研 #结尾\n";
+        let (stripped, removed) = strip_inline_tags(body);
+
+        assert_eq!(removed, vec!["考研", "操作系统", "结尾"]);
+        assert!(!stripped.contains("#考研 #操作系统 删除") && !stripped.contains("正文 #考研"));
+        assert!(stripped.contains("行内 `#代码标签` 保留"), "行内代码不应被删: {stripped}");
+        assert!(stripped.contains("// #代码块标签"), "代码块不应被删: {stripped}");
+        assert!(stripped.contains("[[#锚点]]"), "双链锚点不应被删: {stripped}");
+        assert!(stripped.contains("C# 语言保留"), "C# 不应被删: {stripped}");
+        assert!(!stripped.contains("#结尾"), "纯标签行应整行移除: {stripped}");
+        assert!(!stripped.contains("\n\n\n"), "不应留下连续空行: {stripped:?}");
+    }
+
+    #[test]
+    fn strip_inline_tags_keeps_original_when_none() {
+        let body = "# 标题\n\n没有标签的正文。\n";
+        let (stripped, removed) = strip_inline_tags(body);
+        assert!(removed.is_empty());
+        assert_eq!(stripped, body, "无标签时应逐字节保持原样");
+    }
+
+    #[test]
+    fn strip_inline_tags_handles_chinese_spacing() {
+        let body = "在正文里输入 [[ 即可，或打上标签 #入门 后到标签面板筛选。\n\n见 #英文 标签。\n";
+        let (stripped, removed) = strip_inline_tags(body);
+        assert_eq!(removed, vec!["入门", "英文"]);
+        assert!(
+            stripped.contains("或打上标签后到标签面板筛选。"),
+            "中文语境应连带删除两侧空格: {stripped}"
+        );
+        assert!(stripped.contains("见标签。"), "中文语境应连带删除两侧空格: {stripped}");
+    }
+
+    #[test]
+    fn normalize_moves_inline_tags_into_front_matter() {
+        let content =
+            "---\ntitle: 我的笔记\ntags: [考研]\ncreated: 2026-01-01T00:00:00+08:00\nupdated: 2026-01-02T00:00:00+08:00\n---\n\n# 正文\n\n这段提到 #操作系统 与 #考研。\n\n#学习 #操作系统\n";
+        let (new_content, added, removed) = normalize_inline_tags_to_front_matter(content);
+
+        assert_eq!(removed, vec!["操作系统", "考研", "学习"]);
+        assert_eq!(added, vec!["操作系统", "学习"]);
+        let fm = read_meta(&new_content);
+        assert_eq!(fm.tags, vec!["考研", "操作系统", "学习"], "front-matter tags 合并去重");
+        assert_eq!(fm.title.as_deref(), Some("我的笔记"));
+        assert_eq!(fm.created.as_deref(), Some("2026-01-01T00:00:00+08:00"));
+        assert_eq!(fm.updated.as_deref(), Some("2026-01-02T00:00:00+08:00"));
+        let (_, body) = split_front_matter(&new_content);
+        assert!(!body.contains("#操作系统") && !body.contains("#考研") && !body.contains("#学习"));
+        assert!(body.contains("这段提到") && body.contains("正文"), "正文内容应保留: {body}");
+
+        // 幂等：再次执行无变化
+        let (again, added2, removed2) = normalize_inline_tags_to_front_matter(&new_content);
+        assert_eq!(again, new_content);
+        assert!(added2.is_empty() && removed2.is_empty());
+    }
+
+    #[test]
+    fn normalize_creates_front_matter_when_absent() {
+        let content = "# 无元数据\n\n正文 #学习 #学习 重复标签。\n\n#末尾\n";
+        let (new_content, added, removed) = normalize_inline_tags_to_front_matter(content);
+        assert_eq!(removed, vec!["学习", "末尾"]);
+        assert_eq!(added, vec!["学习", "末尾"]);
+        assert!(new_content.starts_with("---\ntags: [学习, 末尾]\n---\n"));
+        let (_, body) = split_front_matter(&new_content);
+        assert!(!body.contains("#学习") && !body.contains("#末尾"));
+        assert!(body.contains("正文") && body.contains("重复标签"));
+    }
+
+    #[test]
+    fn normalize_keeps_unrelated_front_matter_fields() {
+        let content = "---\ntitle: 测试\ncustom: keep-me\ntags:\n  - 旧标签\n---\n\n正文 #新标签\n";
+        let (new_content, added, _removed) = normalize_inline_tags_to_front_matter(content);
+        assert_eq!(added, vec!["新标签"]);
+        assert!(new_content.contains("custom: keep-me"), "未知字段应保留: {new_content}");
+        let fm = read_meta(&new_content);
+        assert_eq!(fm.tags, vec!["旧标签", "新标签"]);
+        assert!(!split_front_matter(&new_content).1.contains("#新标签"));
     }
 }

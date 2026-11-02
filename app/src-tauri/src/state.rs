@@ -566,6 +566,83 @@ impl AppState {
         Ok(Vec::new())
     }
 
+    /// 标签归位：把笔记正文中的行内 `#标签` 迁移到文件头 front-matter 的 `tags` 字段。
+    ///
+    /// - `path=None` 表示整个库；
+    /// - `apply=false` 只预览（不写盘），便于前端确认后执行；
+    /// - 写盘统一走 [`AppState::write_note`]（原子写、front-matter 维护、索引更新）；
+    /// - 扫描后文件若被外部修改则跳过该文件，避免覆盖他人改动。
+    pub fn normalize_tags(&self, path: Option<&str>, apply: bool) -> Result<TagNormalizeReport> {
+        let (scanned, changed, writes) = {
+            let inner = self.inner.lock();
+            let vault = inner.require_vault()?;
+            let targets: Vec<String> = match path {
+                Some(p) => vec![p.to_string()],
+                None => vault.scan_notes()?.into_iter().map(|f| f.rel).collect(),
+            };
+            let scanned = targets.len() as u32;
+            let mut changed: Vec<TagNormalizeItem> = Vec::new();
+            let mut writes: Vec<(String, String, String)> = Vec::new(); // (path, 原内容, 新内容)
+            for rel in targets {
+                let Ok((content, _mtime)) = vault.read_note_raw(&rel) else {
+                    continue;
+                };
+                // 无 front-matter 时先补齐系统元数据（title/created/updated），
+                // 保证归位后的文件头信息与"应用内新建笔记"一致（总有 title）。
+                let base = if core::links::split_front_matter(&content).0.is_none() {
+                    let now_iso = chrono::Local::now()
+                        .to_rfc3339_opts(chrono::SecondsFormat::Secs, false);
+                    core::links::touch_front_matter(
+                        &content,
+                        &core::links::display_title(None, &rel),
+                        &now_iso,
+                    )
+                } else {
+                    content.clone()
+                };
+                let (new_content, added, removed) =
+                    core::links::normalize_inline_tags_to_front_matter(&base);
+                // 正文没有行内标签：不产生写盘（避免仅因补元数据而修改用户文件）
+                if removed.is_empty() || new_content == content {
+                    continue;
+                }
+                changed.push(TagNormalizeItem {
+                    path: rel.clone(),
+                    added_tags: added,
+                    removed_inline_tags: removed,
+                });
+                writes.push((rel, content, new_content));
+            }
+            (scanned, changed, writes)
+        };
+
+        let mut failed: Vec<String> = Vec::new();
+        if apply && !writes.is_empty() {
+            for (rel, original, new_content) in writes {
+                // 写前复核：若文件在扫描后被外部修改，则跳过（不覆盖外部改动）
+                let current = {
+                    let inner = self.inner.lock();
+                    inner
+                        .require_vault()
+                        .and_then(|v| v.read_note_raw(&rel).map(|(c, _)| c))
+                };
+                match current {
+                    Ok(c) if c == original => {
+                        if let Err(e) = self.write_note(&rel, &new_content, None) {
+                            failed.push(format!("{rel}: {e}"));
+                        }
+                    }
+                    _ => failed.push(format!("{rel}: 文件已被外部修改，已跳过")),
+                }
+            }
+            self.emit("vault:changed", json!({ "reason": "tags-normalized" }));
+            let mut inner = self.inner.lock();
+            let _ = reconcile_index(&mut inner);
+        }
+
+        Ok(TagNormalizeReport { applied: apply, scanned, changed, failed })
+    }
+
     // =====================================================================
     // 检索（F-03）
     // =====================================================================

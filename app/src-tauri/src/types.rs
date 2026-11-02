@@ -208,6 +208,28 @@ pub struct TagCount {
     pub inline_count: u32,
 }
 
+/// 单个笔记的标签归位结果（`tag.normalize`）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TagNormalizeItem {
+    pub path: String,
+    /// 本次新写入 front-matter 的标签（已去重）
+    pub added_tags: Vec<String>,
+    /// 从正文移除的行内标签
+    pub removed_inline_tags: Vec<String>,
+}
+
+/// 标签归位报告（`tag.normalize`，`apply=false` 时为预览）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TagNormalizeReport {
+    pub applied: bool,
+    pub scanned: u32,
+    pub changed: Vec<TagNormalizeItem>,
+    /// 因文件在扫描后被外部修改而跳过的路径
+    pub failed: Vec<String>,
+}
+
 /// 一个已解析的双链。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

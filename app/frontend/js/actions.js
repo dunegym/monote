@@ -745,6 +745,67 @@ export async function backupNow() {
   }
 }
 
+/**
+ * 标签归位：把正文行内 #标签 统一迁移到文件头 front-matter 的 tags 字段（FR-202 单一来源约定）。
+ * 先预览 → 确认 → 自动备份 → 应用；当前笔记会重新载入，避免旧缓冲覆盖归位结果。
+ */
+export async function normalizeTags() {
+  if (!state.vault) {
+    toast.info('请先打开笔记库');
+    return false;
+  }
+  try {
+    if (state.current) await ctx.editor.flush();
+    const preview = await api.call('tag_normalize', { apply: false });
+    const changed = (preview && preview.changed) || [];
+    if (!changed.length) {
+      toast.info('所有笔记的标签都已在文件头，无需整理');
+      return false;
+    }
+    const detail =
+      changed
+        .slice(0, 8)
+        .map((c) => `${c.path}  ←  ${(c.removedInlineTags || []).map((t) => `#${t}`).join(' ')}`)
+        .join('\n') + (changed.length > 8 ? `\n… 共 ${changed.length} 篇` : '');
+    const ok = await confirmDialog({
+      title: '标签归位（统一到文件头）',
+      message: `检测到 ${changed.length} 篇笔记的正文中含有 #标签。将把它们迁移到文件头 front-matter 的 tags 字段，并从正文移除这些 #标签；执行前会自动备份整个笔记库（当前笔记会先保存）。`,
+      detail,
+      confirmLabel: '开始迁移',
+    });
+    if (!ok) return false;
+    try {
+      await api.call('backup_now', {});
+    } catch (err) {
+      const force = await confirmDialog({
+        title: '自动备份失败',
+        message: `备份失败：${api.friendlyError(err)}。是否仍继续迁移？（建议先手动备份）`,
+        confirmLabel: '继续迁移',
+        danger: true,
+      });
+      if (!force) return false;
+    }
+    const report = await api.call('tag_normalize', { apply: true });
+    const done = (report && report.changed && report.changed.length) || 0;
+    const failed = (report && report.failed) || [];
+    toast.success(`标签归位完成：${done} 篇笔记已更新${failed.length ? `，${failed.length} 篇跳过` : ''}`);
+    if (failed.length) {
+      ctx.notify.pushLocal({ level: 'warn', title: '部分笔记已跳过标签归位', detail: failed.join('\n') });
+    }
+    await refreshAll();
+    // 当前笔记可能已被改写：重新读取并载入编辑器，防止旧缓冲区在下次自动保存时覆盖归位结果
+    const cur = state.current;
+    if (cur) {
+      const fresh = await api.callSafe('vault_read', { path: cur.path }, null);
+      if (fresh) ctx.editor.setNote(fresh);
+    }
+    return true;
+  } catch (err) {
+    toast.error(`标签归位失败：${api.friendlyError(err)}`);
+    return false;
+  }
+}
+
 export async function syncNow() {
   if (!state.vault) {
     toast.info('请先打开笔记库');
@@ -1155,6 +1216,7 @@ function getActions() {
     exportNote,
     exportVault,
     backupNow,
+    normalizeTags,
     syncNow,
     rebuildIndex,
     checkUpdate,

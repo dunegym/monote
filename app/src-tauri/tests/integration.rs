@@ -270,3 +270,55 @@ fn notifications_and_app_info() {
     assert!(info.get("version").is_some());
     assert!(info.get("configPath").is_some());
 }
+
+#[test]
+fn normalize_inline_tags_to_front_matter() {
+    let ctx = setup();
+    // 写入时系统会补 front-matter（title/created/updated），但正文行内标签原样保留
+    ctx.state
+        .write_note("标签笔记.md", "# 标签笔记\n\n正文 #考研 #操作系统 。\n\n#末尾\n", Some(0))
+        .expect("write");
+    let path = ctx.vault_dir.join("标签笔记.md");
+    // 直接写盘的裸文件（无 front-matter）：归位时应先补齐 title/created/updated
+    let raw_path = ctx.vault_dir.join("裸文件.md");
+    std::fs::write(&raw_path, "# 裸文件\n\n直接写盘的文件 #裸标签\n").expect("raw write");
+
+    // 预览：报告会变更，但不写盘
+    let preview = ctx.state.normalize_tags(None, false).expect("preview");
+    assert!(
+        preview.changed.iter().any(|c| c.path == "标签笔记.md"),
+        "preview: {preview:?}"
+    );
+    assert!(
+        preview.changed.iter().any(|c| c.path == "裸文件.md"),
+        "裸文件应被归位: {preview:?}"
+    );
+    let before = std::fs::read_to_string(&path).expect("read before");
+    assert!(before.contains("#考研"), "预览不应写盘: {before}");
+    let raw_before = std::fs::read_to_string(&raw_path).expect("read raw before");
+    assert!(raw_before.starts_with("# 裸文件"), "预览不应改裸文件: {raw_before}");
+
+    // 应用：标签迁移到 front-matter，正文不再含 #标签
+    let report = ctx.state.normalize_tags(None, true).expect("apply");
+    assert!(report.changed.iter().any(|c| c.path == "标签笔记.md"));
+    let after = std::fs::read_to_string(&path).expect("read after");
+    assert!(after.contains("tags: [考研, 操作系统, 末尾]"), "content: {after}");
+    assert!(!after.contains("#考研") && !after.contains("#操作系统") && !after.contains("#末尾"));
+    assert!(after.contains("正文"), "正文内容应保留: {after}");
+
+    // 裸文件：归位后文件头应有 title 与 tags，正文行内标签被移除
+    let raw_after = std::fs::read_to_string(&raw_path).expect("read raw after");
+    assert!(raw_after.starts_with("---\ntitle: 裸文件\ntags: [裸标签]\n"), "{raw_after}");
+    assert!(raw_after.contains("created:") && raw_after.contains("# 裸文件"));
+    assert!(!raw_after.contains("#裸标签"));
+
+    // 幂等：再次预览无变化
+    let again = ctx.state.normalize_tags(None, false).expect("preview2");
+    assert!(again.changed.is_empty(), "应为幂等: {again:?}");
+
+    // 标签仍然可检索/聚合
+    let tags = ctx.state.tags().expect("tags");
+    let names: Vec<&str> = tags.iter().map(|t| t.name.as_str()).collect();
+    assert!(names.contains(&"考研"), "tags: {tags:?}");
+    assert!(names.contains(&"裸标签"), "tags: {tags:?}");
+}

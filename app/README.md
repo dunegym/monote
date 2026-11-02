@@ -9,6 +9,7 @@ MoNote 是一款**本地优先**的个人 Markdown 笔记与知识管理桌面�
 - 数据是本地标准 UTF-8 `.md` 文件（YAML front-matter），无格式锁定、卸载不丢数据；
 - 三栏编辑体验：Markdown 编辑 + 实时预览 + 大纲，2 秒自动保存、原子写、崩溃安全；
 - 知识组织：`[[双链]]` + 反链面板 + 标签聚合 + 文件夹树；
+- 标签约定：支持行内 `#标签` 与 front-matter `tags` 两种写法（等价合并）；命令面板「标签归位」可一键把正文行内标签统一迁移到文件头（迁移前自动备份整库，可预览后执行）；
 - 快速检索：SQLite FTS5 全文索引（中文按字），标题检索 / 全文检索 / `tag:` 过滤 / 范围过滤；
 - 可靠备份：每日自动备份（保留 5 份）、ZIP 导入导出、回收站 30 天自动清理；
 - 可选 WebDAV 同步（用户自备服务器，冲突"新者为准 + 冲突副本"，密码存 OS 凭据管理器）。
@@ -26,6 +27,10 @@ MoNote 是一款**本地优先**的个人 Markdown 笔记与知识管理桌面�
 | 命令面板 | 表格与任务列表渲染 |
 | --- | --- |
 | ![命令面板](docs/screenshots/ui-14-command-palette.png) | ![笔记](docs/screenshots/ui-15-final-note.png) |
+
+| 标签面板（统一到文件头 tags） | 标签归位确认（迁移前预览 + 自动备份） |
+| --- | --- |
+| ![标签面板](docs/screenshots/ui-17-tags-panel.png) | ![标签归位](docs/screenshots/ui-16-tag-normalize-confirm.png) |
 
 | 设置页 | 亮色主题 |
 | --- | --- |

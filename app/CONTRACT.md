@@ -109,6 +109,7 @@ src/
 | `link_suggest` | `{prefix}` | `{items: SuggestItem[]}` | 双链补全（≤10） |
 | `link_backlinks` | `{path}` | `{items: BacklinkItem[]}` | 反链 |
 | `tag_list` | `{}` | `{tags: TagCount[]}` | 标签聚合 |
+| `tag_normalize` | `{path?, apply?}` | `TagNormalizeReport{applied,scanned,changed,failed}` | 标签归位：正文行内 `#标签` → front-matter `tags`；`apply=false` 预览，`true` 执行（前端负责先自动备份） |
 | `search_query` | `{kind:"title"\|"full", term, filters?, sort?, page?, pageSize?}` | `SearchResult` | 检索 |
 | `index_rebuild` | `{}` | `{jobId}` | 全量重建（后台线程） |
 | `index_status` | `{}` | `IndexStatus` | 索引进度/降级 |

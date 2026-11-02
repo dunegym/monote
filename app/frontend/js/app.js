@@ -308,6 +308,7 @@ function registerCommands() {
     { id: 'vault.export.html', title: '导出当前笔记为 HTML（图片内嵌）', group: '文件', keywords: 'export 导出 html', when: hasNote, run: () => actions.exportNote('html') },
     { id: 'vault.export.pdf', title: '导出当前笔记为 PDF（打印）', group: '文件', keywords: 'export 导出 pdf 打印', when: hasNote, run: () => actions.exportNote('pdf') },
     { id: 'vault.export.zip', title: '导出整库 ZIP', group: '文件', keywords: 'export 导出 zip 整库', when: hasVault, run: () => actions.exportVault() },
+    { id: 'tags.normalize', title: '标签归位：把正文 #标签 统一到文件头', group: '文件', keywords: 'tags 标签 归位 统一 front-matter 元数据 normalize', when: hasVault, run: () => actions.normalizeTags() },
     // 备份与同步
     { id: 'backup.now', title: '立即备份', group: '备份与同步', keywords: 'backup 备份', shortcutId: 'backup.now', when: hasVault, run: () => actions.backupNow() },
     { id: 'sync.now', title: '立即同步（WebDAV）', group: '备份与同步', keywords: 'sync 同步 webdav', shortcutId: 'sync.now', when: hasVault, run: () => actions.syncNow() },

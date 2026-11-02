@@ -146,6 +146,11 @@ pub fn tag_list(state: State<'_, AppState>) -> Value {
     resp(state.tags().map(|tags| serde_json::json!({ "tags": tags })))
 }
 
+#[tauri::command]
+pub fn tag_normalize(state: State<'_, AppState>, path: Option<String>, apply: Option<bool>) -> Value {
+    resp(state.normalize_tags(path.as_deref(), apply.unwrap_or(false)))
+}
+
 // ===========================================================================
 // 检索
 // ===========================================================================
