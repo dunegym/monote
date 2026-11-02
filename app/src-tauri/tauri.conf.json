@@ -1,0 +1,39 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MoNote",
+  "version": "1.0.0",
+  "identifier": "app.monote.desktop",
+  "build": {
+    "frontendDist": "../frontend"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "MoNote 墨记",
+        "width": 1320,
+        "height": 840,
+        "minWidth": 960,
+        "minHeight": 600,
+        "center": true,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
+    "shortDescription": "本地优先的个人 Markdown 笔记与知识管理工具",
+    "longDescription": "MoNote（墨记）是一款本地优先的个人 Markdown 笔记与知识管理桌面应用：数据为本地标准 .md 文件，核心能力为 Markdown 编辑、双链知识组织、快速全文检索、可靠的备份与导出。"
+  }
+}

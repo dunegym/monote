@@ -1,0 +1,12 @@
+# Rust / Tauri 构建产物
+target/
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# 前端依赖（本项目前端为纯静态，vendor 已入库；保留 node_modules 忽略以防本地调试）
+node_modules/
+
+# 本地日志与临时文件
+*.log
+.DS_Store
+Thumbs.db

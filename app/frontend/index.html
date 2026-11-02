@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>MoNote 墨记</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231d5fd0'/%3E%3Ctext x='32' y='45' font-size='38' font-family='serif' text-anchor='middle' fill='white'%3E墨%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <noscript>
+    <div class="boot"><div class="boot-card"><h1>MoNote 墨记</h1><p>需要启用 JavaScript 才能使用 MoNote。</p></div></div>
+  </noscript>
+
+  <!-- 启动占位：模块加载完成后由 app.js 隐藏 -->
+  <div id="boot" class="boot" role="status" aria-live="polite">
+    <div class="boot-card">
+      <div class="boot-logo" aria-hidden="true">墨</div>
+      <h1>MoNote 墨记</h1>
+      <p id="boot-msg">正在启动…</p>
+      <p id="boot-hint" class="boot-hint" hidden></p>
+    </div>
+  </div>
+
+  <div id="app" class="app" hidden>
+    <!-- 顶部栏 -->
+    <header class="titlebar" role="banner">
+      <div class="brand" aria-label="MoNote 墨记">
+        <span class="brand-mark" aria-hidden="true">墨</span>
+        <span class="brand-name">MoNote</span>
+        <span class="brand-sub">墨记</span>
+      </div>
+      <div class="titlebar-actions" role="toolbar" aria-label="主工具栏">
+        <button class="btn btn-ghost" id="btn-new-note" type="button" title="新建笔记 (Ctrl+N)" aria-label="新建笔记">＋ 新建</button>
+        <button class="btn btn-ghost" id="btn-import" type="button" title="导入 Markdown 文件/文件夹" aria-label="导入笔记">导入</button>
+        <button class="btn btn-ghost" id="btn-export" type="button" title="导出当前笔记" aria-label="导出当前笔记" aria-haspopup="menu">导出</button>
+        <button class="btn btn-ghost" id="btn-quick-open" type="button" title="快速打开笔记 (Ctrl+P)" aria-label="快速打开笔记">⌕ 快速打开</button>
+        <button class="btn btn-ghost" id="btn-command" type="button" title="命令面板 (Ctrl+Shift+P)" aria-label="打开命令面板">⌘ 命令</button>
+      </div>
+      <div class="titlebar-right">
+        <span id="vault-chip" class="vault-chip" title="当前笔记库"></span>
+        <button class="icon-btn" id="btn-theme" type="button" aria-label="切换主题（自动/亮色/暗色）" title="切换主题">◐</button>
+        <div class="notify-wrap">
+          <button class="icon-btn" id="btn-notify" type="button" aria-label="通知中心" aria-haspopup="dialog" aria-expanded="false" title="通知中心">
+            <span aria-hidden="true">🔔</span><span id="notify-badge" class="badge" hidden>0</span>
+          </button>
+          <section id="notify-panel" class="notify-panel" role="dialog" aria-label="通知中心" hidden></section>
+        </div>
+        <button class="icon-btn" id="btn-settings" type="button" aria-label="设置" title="设置 (Ctrl+,)">⚙</button>
+      </div>
+    </header>
+
+    <div id="app-banner" class="app-banner" role="status" hidden></div>
+
+    <!-- 工作区：三栏 -->
+    <div class="workspace" id="workspace">
+      <aside id="sidebar" class="sidebar" aria-label="侧边栏">
+        <div class="sidebar-tabs" role="tablist" aria-label="侧边栏面板">
+          <button role="tab" id="tab-files" class="tab active" data-tab="files" aria-selected="true" aria-controls="panel-files" tabindex="0">文件</button>
+          <button role="tab" id="tab-tags" class="tab" data-tab="tags" aria-selected="false" aria-controls="panel-tags" tabindex="-1">标签</button>
+          <button role="tab" id="tab-trash" class="tab" data-tab="trash" aria-selected="false" aria-controls="panel-trash" tabindex="-1" title="回收站">回收</button>
+          <button role="tab" id="tab-search" class="tab" data-tab="search" aria-selected="false" aria-controls="panel-search" tabindex="-1">检索</button>
+          <button class="icon-btn sidebar-collapse" id="btn-collapse-sidebar" type="button" aria-label="折叠侧边栏" title="折叠侧边栏 (Ctrl+\)">‹</button>
+        </div>
+        <div class="sidebar-panels">
+          <section id="panel-files" class="sidebar-panel" role="tabpanel" aria-labelledby="tab-files">
+            <div class="panel-toolbar">
+              <button class="btn btn-sm" id="btn-new-note-side" type="button" title="新建笔记">新建笔记</button>
+              <button class="btn btn-sm" id="btn-new-folder-side" type="button" title="新建文件夹">新建文件夹</button>
+              <button class="icon-btn" id="btn-refresh-tree" type="button" aria-label="刷新文件树" title="刷新">⟳</button>
+            </div>
+            <div id="tree" class="tree" role="tree" aria-label="文件夹树"></div>
+            <div id="tree-empty" class="empty-mini" hidden>笔记库为空，点击「新建笔记」开始。</div>
+          </section>
+
+          <section id="panel-tags" class="sidebar-panel" role="tabpanel" aria-labelledby="tab-tags" hidden>
+            <div class="panel-toolbar">
+              <span class="panel-title">全部标签</span>
+              <button class="icon-btn" id="btn-refresh-tags" type="button" aria-label="刷新标签" title="刷新">⟳</button>
+            </div>
+            <div id="tag-list" class="tag-list" aria-label="标签列表"></div>
+            <div id="tag-filter-bar" class="tag-filter-bar" hidden></div>
+            <div id="tag-results" class="note-list" aria-label="标签筛选结果"></div>
+          </section>
+
+          <section id="panel-trash" class="sidebar-panel" role="tabpanel" aria-labelledby="tab-trash" hidden>
+            <div class="panel-toolbar">
+              <span class="panel-title">回收站</span>
+              <button class="icon-btn" id="btn-refresh-trash" type="button" aria-label="刷新回收站" title="刷新">⟳</button>
+              <button class="btn btn-sm btn-danger-ghost" id="btn-empty-trash" type="button">清空</button>
+            </div>
+            <p class="hint">笔记移入回收站 30 天后自动永久清除。</p>
+            <div id="trash-list" class="trash-list"></div>
+          </section>
+
+          <section id="panel-search" class="sidebar-panel" role="tabpanel" aria-labelledby="tab-search" hidden>
+            <div class="panel-toolbar"><span class="panel-title">检索入口</span></div>
+            <div class="search-entry">
+              <label class="sr-only" for="sidebar-search-input">检索关键词</label>
+              <input id="sidebar-search-input" class="input" type="search" placeholder="输入关键词，回车全文检索" autocomplete="off">
+              <div class="search-entry-actions">
+                <button class="btn btn-sm" id="btn-quick-open-2" type="button">标题快速打开 <kbd>Ctrl+P</kbd></button>
+                <button class="btn btn-sm" id="btn-full-search" type="button">全文检索 <kbd>Ctrl+Shift+F</kbd></button>
+              </div>
+              <p class="hint">语法：空格分隔多关键词 AND；<code>"精确短语"</code> 用双引号；<code>tag:标签名</code> 过滤。</p>
+            </div>
+          </section>
+        </div>
+      </aside>
+
+      <main id="editor-pane" class="editor-pane" aria-label="编辑区">
+        <div class="pane-header editor-header">
+          <button class="icon-btn" id="btn-toggle-sidebar" type="button" aria-label="显示或隐藏侧边栏" title="侧边栏 (Ctrl+\)">☰</button>
+          <div class="note-heading">
+            <h2 id="note-title" class="note-title">未打开笔记</h2>
+            <div id="note-path" class="note-path muted"></div>
+          </div>
+          <div class="pane-actions">
+            <button class="btn btn-sm" id="btn-properties" type="button" aria-expanded="false" aria-controls="properties-panel">属性</button>
+            <button class="btn btn-sm" id="btn-backlinks" type="button" aria-expanded="false" aria-controls="backlinks-panel">反链 <span id="backlinks-count" class="count"></span></button>
+            <button class="icon-btn" id="btn-save" type="button" aria-label="立即保存" title="保存 (Ctrl+S)">💾</button>
+            <button class="icon-btn" id="btn-toggle-preview" type="button" aria-label="显示或隐藏预览区" title="预览 (Ctrl+Shift+M)">◫</button>
+          </div>
+        </div>
+
+        <section id="properties-panel" class="properties-panel" aria-label="笔记属性" hidden>
+          <div class="field field-grow">
+            <label class="field-label" for="prop-title">标题</label>
+            <input id="prop-title" class="input" type="text" placeholder="笔记标题">
+          </div>
+          <div class="field field-grow">
+            <label class="field-label" for="prop-tags">标签（逗号分隔）</label>
+            <input id="prop-tags" class="input" type="text" placeholder="考研, 操作系统">
+          </div>
+          <div class="field">
+            <span class="field-label">创建 / 更新</span>
+            <span id="prop-dates" class="field-static muted">—</span>
+          </div>
+          <div class="field field-actions">
+            <button class="btn btn-sm" id="btn-props-apply" type="button">应用</button>
+            <button class="btn btn-sm btn-ghost" id="btn-props-close" type="button">收起</button>
+          </div>
+        </section>
+
+        <div id="format-toolbar" class="format-toolbar" role="toolbar" aria-label="Markdown 格式工具栏"></div>
+
+        <div class="editor-body">
+          <div id="editor-empty" class="empty-state">
+            <div class="empty-icon" aria-hidden="true">✎</div>
+            <h3>没有打开的笔记</h3>
+            <p>从左侧文件树选择一篇笔记，或新建一篇开始记录。</p>
+            <div class="empty-actions">
+              <button class="btn btn-primary" id="btn-empty-new" type="button">新建笔记</button>
+              <button class="btn" id="btn-empty-open-vault" type="button">打开库文件夹</button>
+            </div>
+          </div>
+          <textarea id="editor" class="editor-input" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Markdown 编辑器" placeholder="开始写点什么…（支持 Markdown、[[双链]]、$公式$）"></textarea>
+          <div id="link-suggest" class="link-suggest" role="listbox" aria-label="双链自动补全" hidden></div>
+        </div>
+
+        <section id="backlinks-panel" class="backlinks-panel" aria-label="反向链接面板" hidden>
+          <div class="backlinks-head">
+            <h3>反向链接</h3>
+            <span id="backlinks-summary" class="muted"></span>
+            <button class="icon-btn" id="btn-backlinks-close" type="button" aria-label="关闭反链面板">×</button>
+          </div>
+          <div id="backlinks-list" class="backlinks-list"></div>
+        </section>
+      </main>
+
+      <div id="splitter" class="splitter" role="separator" aria-orientation="vertical" aria-label="调整预览区宽度（双击恢复默认）" tabindex="0" title="拖动调整宽度；双击恢复默认"></div>
+
+      <aside id="preview-pane" class="preview-pane" aria-label="预览区">
+        <div class="pane-header preview-header">
+          <div class="preview-tabs" role="tablist" aria-label="预览面板">
+            <button role="tab" id="ptab-preview" class="tab active" data-ptab="preview" aria-selected="true" aria-controls="preview" tabindex="0">预览</button>
+            <button role="tab" id="ptab-outline" class="tab" data-ptab="outline" aria-selected="false" aria-controls="outline" tabindex="-1">大纲</button>
+          </div>
+          <div class="preview-header-actions">
+            <span id="preview-status" class="muted preview-status" aria-live="polite"></span>
+            <button class="icon-btn" id="btn-toggle-preview-2" type="button" aria-label="折叠预览区" title="预览 (Ctrl+Shift+M)">›</button>
+          </div>
+        </div>
+        <div id="preview" class="preview markdown-body" role="tabpanel" aria-labelledby="ptab-preview"></div>
+        <nav id="outline" class="outline" role="tabpanel" aria-labelledby="ptab-outline" aria-label="大纲" hidden></nav>
+      </aside>
+    </div>
+
+    <!-- 状态栏 -->
+    <footer class="statusbar" id="statusbar" role="status" aria-live="polite">
+      <div class="status-left">
+        <span class="status-item" id="status-doc">未打开笔记</span>
+        <span class="status-item" id="status-words" title="字数（不含空白字符）">0 字</span>
+        <span class="status-item save-state saved" id="status-save"><span class="dot" aria-hidden="true"></span><span id="status-save-text">已保存</span></span>
+        <span class="status-item" id="status-index" title="索引状态">索引就绪</span>
+        <span class="status-item" id="status-sync" title="同步状态">同步未配置</span>
+        <span class="status-item" id="status-backup" title="备份状态">备份 —</span>
+      </div>
+      <div class="status-right">
+        <button class="status-btn" id="btn-rebuild-index" type="button" title="重建检索索引">重建索引</button>
+        <button class="status-btn" id="btn-backup" type="button" title="立即备份">备份</button>
+        <button class="status-btn" id="btn-sync" type="button" title="立即同步">同步</button>
+        <span class="status-item status-vault" id="status-vault" title="当前笔记库"></span>
+        <span class="status-item mock-flag" id="status-mock" hidden title="未连接 Tauri 后端，正在使用演示数据">演示模式</span>
+      </div>
+    </footer>
+
+    <!-- 未打开库时的欢迎页 -->
+    <section id="welcome-screen" class="welcome" hidden role="dialog" aria-modal="true" aria-labelledby="welcome-title">
+      <div class="welcome-card">
+        <div class="welcome-logo" aria-hidden="true">墨</div>
+        <h2 id="welcome-title">欢迎使用 MoNote 墨记</h2>
+        <p class="welcome-sub">本地优先的个人 Markdown 笔记与知识管理工具。所有笔记都是你磁盘上的标准 <code>.md</code> 文件。</p>
+        <ul class="welcome-points">
+          <li>三栏布局：文件树 · Markdown 编辑 · 实时预览</li>
+          <li>双链 <code>[[笔记名]]</code>、标签、全文检索与回收站</li>
+          <li>自动保存、备份与可选 WebDAV 同步</li>
+        </ul>
+        <div class="welcome-actions">
+          <button class="btn btn-primary btn-lg" id="welcome-open-vault" type="button">选择 / 新建笔记库</button>
+          <button class="btn btn-lg" id="welcome-retry" type="button">重新检测</button>
+        </div>
+        <p id="welcome-hint" class="hint">选择一个空文件夹即可创建新库；已有库请选择其根目录。</p>
+      </div>
+    </section>
+  </div>
+
+  <div id="toast-root" class="toast-root" aria-live="polite"></div>
+  <div id="overlay-root" class="overlay-root"></div>
+  <div id="onboarding-root"></div>
+
+  <script src="vendor/marked.umd.js"></script>
+  <script src="vendor/katex/katex.min.js"></script>
+  <script src="vendor/highlight/highlight.min.js"></script>
+  <script type="module" src="js/app.js"></script>
+  <script>
+    // 启动失败兜底提示（ES Module 在 file:// 下会被浏览器安全策略拦截）
+    window.setTimeout(function () {
+      if (window.__MONOTE_READY__) return;
+      var msg = document.getElementById('boot-msg');
+      var hint = document.getElementById('boot-hint');
+      if (!msg || !hint) return;
+      if (location.protocol === 'file:') {
+        msg.textContent = '界面未能启动';
+        hint.hidden = false;
+        hint.textContent = '浏览器禁止通过 file:// 加载 ES Module。请在本目录运行 `node serve.mjs` 后访问 http://127.0.0.1:8099 ，或用 `cargo run` 启动桌面应用。';
+      } else {
+        msg.textContent = '界面仍在启动…';
+        hint.hidden = false;
+        hint.textContent = '若长时间停留在此页，请打开开发者工具（F12）查看控制台错误。';
+      }
+    }, 3500);
+  </script>
+</body>
+</html>
